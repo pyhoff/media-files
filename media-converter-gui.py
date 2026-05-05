@@ -5,8 +5,9 @@ GUI front-end for media-converter.py.
 Requires: pip install PyQt6
 """
 
+import re
 import sys
-import subprocess
+import subprocess  # nosec B404 — required to invoke media-converter.py; shell=False used throughout
 from pathlib import Path
 
 from PyQt6.QtWidgets import (
@@ -31,7 +32,7 @@ class ConversionWorker(QThread):
 
     def run(self):
         try:
-            proc = subprocess.Popen(
+            proc = subprocess.Popen(  # nosec B603
                 self.cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
@@ -171,6 +172,10 @@ class MainWindow(QMainWindow):
 
         if not input_folder or not output_format or not output_path:
             self.log.append("Error: input folder, output format, and output folder are all required.")
+            return
+
+        if not re.fullmatch(r"[a-z0-9]+", output_format):
+            self.log.append(f"Error: invalid output format '{output_format}'. Use alphanumeric only (e.g. mp4, mkv, mp3).")
             return
 
         script = Path(__file__).with_name("media-converter.py")
