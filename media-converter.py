@@ -18,8 +18,9 @@ Examples:
 
 import argparse
 import json
+import re
 import shutil
-import subprocess
+import subprocess  # nosec B404 — required to invoke ffmpeg/ffprobe; shell=False used throughout
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -57,7 +58,7 @@ def probe_file(path: Path) -> dict | None:
         str(path),
     ]
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)  # nosec B603
         return json.loads(result.stdout)
     except (subprocess.CalledProcessError, json.JSONDecodeError):
         return None
@@ -102,7 +103,7 @@ def convert_file(input_path: Path, output_path: Path, has_video: bool, has_audio
         cmd.extend(["-vn"])
     cmd.append(str(output_path))
     try:
-        subprocess.run(cmd, check=True, capture_output=True, text=True)
+        subprocess.run(cmd, check=True, capture_output=True, text=True)  # nosec B603
         return True
     except subprocess.CalledProcessError as e:
         print(f"    ffmpeg error: {e.stderr.strip().splitlines()[-1] if e.stderr else 'unknown'}")
@@ -121,7 +122,7 @@ def merge_files(input_files: list[Path], output_file: Path) -> bool:
         "-c", "copy", str(output_file),
     ]
     try:
-        subprocess.run(cmd, check=True, capture_output=True, text=True)
+        subprocess.run(cmd, check=True, capture_output=True, text=True)  # nosec B603
         return True
     except subprocess.CalledProcessError as e:
         print(f"    ffmpeg error: {e.stderr.strip().splitlines()[-1] if e.stderr else 'unknown'}")
@@ -177,6 +178,8 @@ def main() -> int:
         sys.exit(f"Error: '{args.input_folder}' does not exist or is not a directory.")
 
     output_format = args.output_format.lstrip(".").lower()
+    if not re.fullmatch(r"[a-z0-9]+", output_format):
+        sys.exit(f"Error: invalid output format '{output_format}'. Use alphanumeric only (e.g. mp4, mkv, mp3).")
     args.output_path.mkdir(parents=True, exist_ok=True)
 
     files = find_media_files(args.input_folder, args.recursive, args.all_files)
