@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """
-GUI front-end for media-converter.py.
+GUI front-end for media_converter.
 
 Requires: pip install PyQt6
 """
 
 import re
 import sys
-import subprocess  # nosec B404 — required to invoke media-converter.py; shell=False used throughout
 from pathlib import Path
+
+import media_converter
 
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -22,29 +23,45 @@ VIDEO_FORMATS = ["mp4", "mkv", "avi", "mov", "webm"]
 AUDIO_FORMATS = ["mp3", "wav", "flac", "aac", "opus"]
 
 
+class _LineBuffer:
+    """File-like object that emits complete lines via a callback."""
+    def __init__(self, emit_fn):
+        self._emit = emit_fn
+        self._buf = ""
+
+    def write(self, text):
+        self._buf += text
+        while "\n" in self._buf:
+            line, self._buf = self._buf.split("\n", 1)
+            self._emit(line)
+
+    def flush(self):
+        if self._buf:
+            self._emit(self._buf)
+            self._buf = ""
+
+
 class ConversionWorker(QThread):
     line_ready = pyqtSignal(str)
     finished = pyqtSignal(int)
 
-    def __init__(self, cmd: list[str]):
+    def __init__(self, argv: list[str]):
         super().__init__()
-        self.cmd = cmd
+        self.argv = argv
 
     def run(self):
+        old_stdout = sys.stdout
+        sys.stdout = _LineBuffer(self.line_ready.emit)
+        returncode = 0
         try:
-            proc = subprocess.Popen(  # nosec B603
-                self.cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-            )
-            for line in proc.stdout:
-                self.line_ready.emit(line.rstrip())
-            proc.wait()
-            self.finished.emit(proc.returncode)
+            returncode = media_converter.main(self.argv) or 0
         except Exception as e:
             self.line_ready.emit(f"Error: {e}")
-            self.finished.emit(1)
+            returncode = 1
+        finally:
+            sys.stdout.flush()
+            sys.stdout = old_stdout
+        self.finished.emit(returncode)
 
 
 class MainWindow(QMainWindow):
@@ -175,27 +192,25 @@ class MainWindow(QMainWindow):
             return
 
         if not re.fullmatch(r"[a-z0-9]+", output_format):
-            self.log.append(f"Error: invalid output format '{output_format}'. Use alphanumeric only (e.g. mp4, mkv, mp3).")
+            self.log.append(f"Error: invalid output format '{output_format}'. Use alphanumeric only.")
             return
 
-        script = Path(__file__).with_name("media-converter.py")
-        cmd = [sys.executable, str(script), input_folder, output_format, output_path]
-
+        argv = [input_folder, output_format, output_path]
         if self.cb_recursive.isChecked():
-            cmd.append("-r")
+            argv.append("-r")
         if self.cb_merge.isChecked():
-            cmd.append("-m")
+            argv.append("-m")
         if self.cb_dry_run.isChecked():
-            cmd.append("-n")
+            argv.append("-n")
         if self.cb_all_files.isChecked():
-            cmd.append("-a")
+            argv.append("-a")
 
         self.log.clear()
-        self.log.append("$ " + " ".join(cmd) + "\n")
+        self.log.append("Starting conversion...\n")
         self.run_btn.setEnabled(False)
         self.run_btn.setText("Running…")
 
-        self.worker = ConversionWorker(cmd)
+        self.worker = ConversionWorker(argv)
         self.worker.line_ready.connect(self.log.append)
         self.worker.finished.connect(self._done)
         self.worker.start()
