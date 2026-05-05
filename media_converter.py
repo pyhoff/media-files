@@ -6,14 +6,14 @@ Scans a folder for media files, reports whether each has audio/video streams,
 then converts them to the requested output format using ffmpeg.
 
 Usage:
-    python media_converter.py <input_folder> <output_format> <output_path> [-r] [--dry-run] [--merge] [--all-files]
+    python media_converter.py <input_folder> <output_format> <output_path> [-r] [-n] [-m] [-a]
 
 Examples:
     python media_converter.py ./videos mp4 ./converted
     python media_converter.py ./media mp3 ./audio_only -r
-    python media_converter.py ./clips mkv ./out --dry-run
-    python media_converter.py ./clips mp4 ./out --merge
-    python media_converter.py ./clips mp4 ./out --merge -r
+    python media_converter.py ./clips mkv ./out -n
+    python media_converter.py ./clips mp4 ./out -m
+    python media_converter.py ./clips mp4 ./out -m -r
 """
 
 import argparse
@@ -42,10 +42,12 @@ AUDIO_ONLY_FORMATS = {"mp3", "wav", "aac", "flac", "ogg", "m4a", "opus", "wma", 
 def check_dependencies() -> None:
     for tool in ("ffmpeg", "ffprobe"):
         if shutil.which(tool) is None:
-            sys.exit(
+            print(
                 f"Error: '{tool}' was not found on PATH. "
                 "Please install ffmpeg (https://ffmpeg.org/download.html) and try again."
             )
+            return False
+    return True
 
 
 def probe_file(path: Path) -> dict | None:
@@ -131,7 +133,7 @@ def merge_files(input_files: list[Path], output_file: Path) -> bool:
         list_path.unlink(missing_ok=True)
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(argv=None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Analyze and convert media files in a folder using ffmpeg.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -148,11 +150,10 @@ def parse_args() -> argparse.Namespace:
                         help="Merge converted files into one. With -r, produces one file per folder.")
     parser.add_argument("-a", "--all-files", action="store_true",
                         help="Probe every file regardless of extension.")
-    return parser.parse_args()
+    return parser.parse_args(argv)
 
 
 def _probe_and_print(file_path: Path) -> tuple[dict | None, bool, bool]:
-    """Probe a file and print its stream info. Returns (probe_data, has_video, has_audio)."""
     probe_data = probe_file(file_path)
     if probe_data is None:
         print("    Skipped: not a recognized media file (ffprobe failed).\n")
@@ -170,16 +171,21 @@ def _probe_and_print(file_path: Path) -> tuple[dict | None, bool, bool]:
     return probe_data, has_video, has_audio
 
 
-def main() -> int:
-    args = parse_args()
-    check_dependencies()
+def main(argv=None) -> int:
+    args = parse_args(argv)
+
+    if not check_dependencies():
+        return 1
 
     if not args.input_folder.is_dir():
-        sys.exit(f"Error: '{args.input_folder}' does not exist or is not a directory.")
+        print(f"Error: '{args.input_folder}' does not exist or is not a directory.")
+        return 1
 
     output_format = args.output_format.lstrip(".").lower()
     if not re.fullmatch(r"[a-z0-9]+", output_format):
-        sys.exit(f"Error: invalid output format '{output_format}'. Use alphanumeric only (e.g. mp4, mkv, mp3).")
+        print(f"Error: invalid output format '{output_format}'. Use alphanumeric only (e.g. mp4, mkv, mp3).")
+        return 1
+
     args.output_path.mkdir(parents=True, exist_ok=True)
 
     files = find_media_files(args.input_folder, args.recursive, args.all_files)
@@ -230,7 +236,6 @@ def main() -> int:
                 failures += 1
 
     else:
-        # Merge mode: group files, convert to temp, then concatenate per group.
         if args.recursive:
             groups: dict[Path, list[Path]] = defaultdict(list)
             for f in files:

@@ -38,7 +38,7 @@ The log area streams output live as conversion runs.
 ## CLI
 
 ```
-python media-converter.py <input_folder> <output_format> <output_path> [options]
+python media_converter.py <input_folder> <output_format> <output_path> [options]
 ```
 
 ### Options
@@ -54,16 +54,16 @@ python media-converter.py <input_folder> <output_format> <output_path> [options]
 
 ```bash
 # Convert all .media files in a folder to mp4
-python media-converter.py ./input mp4 ./output
+python media_converter.py ./input mp4 ./output
 
 # Recursively convert and merge each subfolder into one file
-python media-converter.py ./input mp4 ./output -r -m
+python media_converter.py ./input mp4 ./output -r -m
 
 # Preview what would happen without converting
-python media-converter.py ./input mp4 ./output -r -n
+python media_converter.py ./input mp4 ./output -r -n
 
 # Force-probe all files regardless of extension
-python media-converter.py ./input mp4 ./output -a
+python media_converter.py ./input mp4 ./output -a
 ```
 
 ## Building an Executable

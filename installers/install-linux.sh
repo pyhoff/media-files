@@ -72,7 +72,9 @@ pip install PyQt6 pyinstaller
 
 # --- Build ---
 echo "Building executable..."
-pyinstaller --onefile --windowed --name "media-converter" media-converter-gui.py
+pyinstaller --onefile --windowed --name "media-converter" \
+    --add-data "media_converter.py:." \
+    media-converter-gui.py
 
 echo ""
 echo "Done. Executable: dist/media-converter"

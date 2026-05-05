@@ -46,7 +46,9 @@ pip install PyQt6 pyinstaller
 
 # --- Build ---
 Write-Host "Building executable..." -ForegroundColor Yellow
-pyinstaller --onefile --windowed --name "media-converter" media-converter-gui.py
+pyinstaller --onefile --windowed --name "media-converter" `
+    --add-data "media_converter.py;." `
+    media-converter-gui.py
 
 Write-Host ""
 Write-Host "Done. Executable: dist\media-converter.exe" -ForegroundColor Green
