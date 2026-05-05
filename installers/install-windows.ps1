@@ -7,44 +7,54 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-$ProjectRoot = Resolve-Path "$PSScriptRoot\.."
+$ProjectRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 Set-Location $ProjectRoot
 
-Write-Host "=== Media Converter — Windows Build ===" -ForegroundColor Cyan
+Write-Host "=== Media Converter Windows Build ===" -ForegroundColor Cyan
 
-# --- Chocolatey ---
+# Chocolatey
 if (-not (Get-Command choco -ErrorAction SilentlyContinue)) {
     Write-Host "Installing Chocolatey..." -ForegroundColor Yellow
-    [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
-    Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
-    $env:PATH += ";$env:ALLUSERSPROFILE\chocolatey\bin"
+    [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
+    Invoke-Expression ((New-Object System.Net.WebClient).DownloadString("https://community.chocolatey.org/install.ps1"))
+
+    $ChocolateyBin = Join-Path $env:ProgramData "chocolatey\bin"
+    $env:Path = "$env:Path;$ChocolateyBin"
 }
 
-# --- Python ---
+# Python
 if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
     Write-Host "Installing Python..." -ForegroundColor Yellow
     choco install python --yes
-    refreshenv
+
+    $PythonPath = "C:\Python312"
+    $PythonScripts = "C:\Python312\Scripts"
+
+    if (Test-Path $PythonPath) {
+        $env:Path = "$env:Path;$PythonPath;$PythonScripts"
+    }
 }
 
-# --- ffmpeg ---
+# ffmpeg
 if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) {
     Write-Host "Installing ffmpeg..." -ForegroundColor Yellow
     choco install ffmpeg --yes
-    refreshenv
+
+    $FfmpegPath = Join-Path $env:ProgramData "chocolatey\bin"
+    $env:Path = "$env:Path;$FfmpegPath"
 }
 
-# --- Virtual environment ---
+# Virtual environment
 Write-Host "Creating virtual environment..." -ForegroundColor Yellow
 python -m venv .venv
-& ".venv\Scripts\Activate.ps1"
+& ".\.venv\Scripts\Activate.ps1"
 
-# --- Dependencies ---
+# Dependencies
 Write-Host "Installing Python dependencies..." -ForegroundColor Yellow
 python -m pip install --upgrade pip
-pip install PyQt6 pyinstaller
+python -m pip install PyQt6 pyinstaller
 
-# --- Build ---
+# Build
 Write-Host "Building executable..." -ForegroundColor Yellow
 pyinstaller --onefile --windowed --name "media-converter" `
     --add-data "media_converter.py;." `
