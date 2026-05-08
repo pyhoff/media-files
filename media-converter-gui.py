@@ -3,6 +3,10 @@
 GUI front-end for media_converter.
 
 Requires: pip install PyQt6
+
+Supports proprietary `.media` files (WiFi camera/speaker format) in addition
+to all standard ffmpeg-readable formats. .media files are auto-detected and
+extracted transparently.
 """
 
 import re
@@ -14,9 +18,9 @@ import media_converter
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QFormLayout, QLineEdit, QPushButton, QCheckBox, QFileDialog,
-    QTextEdit, QGroupBox, QRadioButton, QButtonGroup,
+    QTextEdit, QGroupBox, QRadioButton, QButtonGroup, QLabel,
 )
-from PyQt6.QtCore import QThread, pyqtSignal
+from PyQt6.QtCore import QThread, pyqtSignal, Qt
 from PyQt6.QtGui import QFontDatabase
 
 VIDEO_FORMATS = ["mp4", "mkv", "avi", "mov", "webm"]
@@ -135,6 +139,16 @@ class MainWindow(QMainWindow):
         format_layout.addLayout(custom_row)
 
         root.addWidget(format_group)
+
+        # Note about .media support
+        media_note = QLabel(
+            "Note: proprietary .media files (WiFi camera/speaker format) "
+            "are auto-detected and extracted (HEVC video + 8kHz PCM audio)."
+        )
+        media_note.setWordWrap(True)
+        media_note.setStyleSheet("color: gray; font-size: 11px;")
+        media_note.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        root.addWidget(media_note)
 
         # Flags
         flags = QHBoxLayout()

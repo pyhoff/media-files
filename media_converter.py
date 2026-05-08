@@ -5,6 +5,10 @@ Media file analyzer and converter.
 Scans a folder for media files, reports whether each has audio/video streams,
 then converts them to the requested output format using ffmpeg.
 
+Special handling for proprietary `.media` files (WiFi camera/speaker format):
+they are first extracted to an intermediate MKV using media_extractor, then
+converted as normal.
+
 Usage:
     python media_converter.py <input_folder> <output_format> <output_path> [-r] [-n] [-m] [-a]
 
@@ -22,8 +26,11 @@ import re
 import shutil
 import subprocess  # nosec B404 — required to invoke ffmpeg/ffprobe; shell=False used throughout
 import sys
+import tempfile
 from collections import defaultdict
 from pathlib import Path
+
+import media_extractor
 
 MEDIA_EXTENSIONS = {
     # Video
@@ -38,8 +45,12 @@ MEDIA_EXTENSIONS = {
 
 AUDIO_ONLY_FORMATS = {"mp3", "wav", "aac", "flac", "ogg", "m4a", "opus", "wma", "aiff", "ac3"}
 
+# Directory used for intermediate files when extracting .media files.
+# Created on demand and cleaned up at end of run.
+_EXTRACTION_TMP_DIR: Path | None = None
 
-def check_dependencies() -> None:
+
+def check_dependencies() -> bool:
     for tool in ("ffmpeg", "ffprobe"):
         if shutil.which(tool) is None:
             print(
@@ -50,7 +61,47 @@ def check_dependencies() -> None:
     return True
 
 
+def _get_extraction_tmp_dir() -> Path:
+    global _EXTRACTION_TMP_DIR
+    if _EXTRACTION_TMP_DIR is None:
+        _EXTRACTION_TMP_DIR = Path(tempfile.mkdtemp(prefix="media_extract_"))
+    return _EXTRACTION_TMP_DIR
+
+
+def cleanup_extraction_tmp() -> None:
+    global _EXTRACTION_TMP_DIR
+    if _EXTRACTION_TMP_DIR is not None and _EXTRACTION_TMP_DIR.exists():
+        shutil.rmtree(_EXTRACTION_TMP_DIR, ignore_errors=True)
+        _EXTRACTION_TMP_DIR = None
+
+
+def extract_media_to_intermediate(media_path: Path) -> Path | None:
+    """
+    Convert a proprietary .media file to an intermediate MKV in the temp dir.
+    Returns the intermediate file path on success, or None on failure.
+    """
+    tmp_dir = _get_extraction_tmp_dir()
+    # Use a hash-ish unique name so collisions across folders don't clobber each other
+    unique = f"{media_path.stem}_{abs(hash(str(media_path.absolute())))}.mkv"
+    intermediate = tmp_dir / unique
+
+    if intermediate.exists():
+        return intermediate
+
+    print(f"    Extracting .media -> {intermediate.name}")
+    if media_extractor.convert_media_to_mkv(media_path, intermediate):
+        return intermediate
+    return None
+
+
 def probe_file(path: Path) -> dict | None:
+    """
+    Probe a file with ffprobe and return parsed JSON.
+    For .media files, returns synthetic probe data based on extraction.
+    """
+    if path.suffix.lower() == ".media" and media_extractor.is_media_file(path):
+        return media_extractor.get_stream_info(path)
+
     cmd = [
         "ffprobe",
         "-v", "error",
@@ -100,7 +151,19 @@ def find_media_files(folder: Path, recursive: bool, all_files: bool = False) -> 
 
 
 def convert_file(input_path: Path, output_path: Path, has_video: bool, has_audio: bool) -> bool:
-    cmd = ["ffmpeg", "-y", "-loglevel", "error", "-i", str(input_path)]
+    """
+    Convert a media file to output_path. For .media files, first extract to
+    an intermediate MKV, then convert from there.
+    """
+    actual_input = input_path
+    if input_path.suffix.lower() == ".media" and media_extractor.is_media_file(input_path):
+        intermediate = extract_media_to_intermediate(input_path)
+        if intermediate is None:
+            print("    Failed to extract .media file.")
+            return False
+        actual_input = intermediate
+
+    cmd = ["ffmpeg", "-y", "-loglevel", "error", "-i", str(actual_input)]
     if output_path.suffix.lower().lstrip(".") in AUDIO_ONLY_FORMATS and has_video:
         cmd.extend(["-vn"])
     cmd.append(str(output_path))
@@ -163,7 +226,10 @@ def _probe_and_print(file_path: Path) -> tuple[dict | None, bool, bool]:
     duration = probe_data.get("format", {}).get("duration")
     duration_str = f"{float(duration):.1f}s" if duration else "unknown"
 
-    print(f"    Video: {'yes' if has_video else 'no'}  "
+    is_proprietary = file_path.suffix.lower() == ".media"
+    prefix = "[.media] " if is_proprietary else ""
+
+    print(f"    {prefix}Video: {'yes' if has_video else 'no'}  "
           f"Audio: {'yes' if has_audio else 'no'}  "
           f"Streams: {', '.join(codecs) or 'none'}  "
           f"Duration: {duration_str}")
@@ -200,64 +266,11 @@ def main(argv=None) -> int:
     failures = 0
     skipped = 0
 
-    if not args.merge:
-        for idx, file_path in enumerate(files, 1):
-            rel = file_path.relative_to(args.input_folder)
-            print(f"[{idx}/{len(files)}] {rel}")
-
-            _, has_video, has_audio = _probe_and_print(file_path)
-            if _ is None:
-                skipped += 1
-                continue
-
-            if not has_video and not has_audio:
-                print("    Skipped: no playable audio or video streams.\n")
-                skipped += 1
-                continue
-
-            if output_format in AUDIO_ONLY_FORMATS and not has_audio:
-                print(f"    Skipped: target '{output_format}' is audio-only but file has no audio.\n")
-                skipped += 1
-                continue
-
-            out_file = args.output_path / file_path.relative_to(args.input_folder).with_suffix(f".{output_format}")
-            out_file.parent.mkdir(parents=True, exist_ok=True)
-
-            if args.dry_run:
-                print(f"    [dry-run] Would convert -> {out_file}\n")
-                continue
-
-            print(f"    Converting -> {out_file}")
-            if convert_file(file_path, out_file, has_video, has_audio):
-                print("    Done.\n")
-                successes += 1
-            else:
-                print("    Failed.\n")
-                failures += 1
-
-    else:
-        if args.recursive:
-            groups: dict[Path, list[Path]] = defaultdict(list)
-            for f in files:
-                groups[f.parent].append(f)
-        else:
-            groups = {args.input_folder: list(files)}
-
-        tmp_dir = args.output_path / "_tmp"
-        tmp_dir.mkdir(parents=True, exist_ok=True)
-
-        for folder, group_files in sorted(groups.items()):
-            rel_folder = folder.relative_to(args.input_folder)
-            group_label = str(rel_folder) if str(rel_folder) != "." else "(root)"
-            group_name = "_".join(rel_folder.parts) if rel_folder.parts else "merged"
-
-            print(f"\nFolder: {group_label} — {len(group_files)} file(s)")
-
-            converted_temps: list[Path] = []
-
-            for idx, file_path in enumerate(group_files, 1):
+    try:
+        if not args.merge:
+            for idx, file_path in enumerate(files, 1):
                 rel = file_path.relative_to(args.input_folder)
-                print(f"  [{idx}/{len(group_files)}] {rel}")
+                print(f"[{idx}/{len(files)}] {rel}")
 
                 probe_data, has_video, has_audio = _probe_and_print(file_path)
                 if probe_data is None:
@@ -265,7 +278,7 @@ def main(argv=None) -> int:
                     continue
 
                 if not has_video and not has_audio:
-                    print("    Skipped: no playable streams.\n")
+                    print("    Skipped: no playable audio or video streams.\n")
                     skipped += 1
                     continue
 
@@ -274,47 +287,104 @@ def main(argv=None) -> int:
                     skipped += 1
                     continue
 
-                tmp_file = tmp_dir / f"{group_name}_{idx:04d}_{file_path.stem}.{output_format}"
+                out_file = args.output_path / file_path.relative_to(args.input_folder).with_suffix(f".{output_format}")
+                out_file.parent.mkdir(parents=True, exist_ok=True)
 
                 if args.dry_run:
-                    print(f"    [dry-run] Would convert to temp: {tmp_file.name}")
-                    converted_temps.append(tmp_file)
+                    print(f"    [dry-run] Would convert -> {out_file}\n")
                     continue
 
-                print(f"    Converting...")
-                if convert_file(file_path, tmp_file, has_video, has_audio):
-                    print("    Done.")
-                    converted_temps.append(tmp_file)
+                print(f"    Converting -> {out_file}")
+                if convert_file(file_path, out_file, has_video, has_audio):
+                    print("    Done.\n")
+                    successes += 1
                 else:
-                    print("    Failed.")
+                    print("    Failed.\n")
                     failures += 1
 
-            if not converted_temps:
-                print(f"  Nothing to merge.\n")
-                continue
-
-            out_file = args.output_path / f"{group_name}.{output_format}"
-
-            if args.dry_run:
-                print(f"\n  [dry-run] Would merge {len(converted_temps)} file(s) -> {out_file}\n")
-                successes += len(converted_temps)
-                continue
-
-            print(f"\n  Merging {len(converted_temps)} file(s) -> {out_file}")
-            if merge_files(converted_temps, out_file):
-                print("  Merge complete.\n")
-                successes += len(converted_temps)
+        else:
+            if args.recursive:
+                groups: dict[Path, list[Path]] = defaultdict(list)
+                for f in files:
+                    groups[f.parent].append(f)
             else:
-                print("  Merge failed.\n")
-                failures += len(converted_temps)
+                groups = {args.input_folder: list(files)}
 
-            for tmp in converted_temps:
-                tmp.unlink(missing_ok=True)
+            tmp_dir = args.output_path / "_tmp"
+            tmp_dir.mkdir(parents=True, exist_ok=True)
 
-        try:
-            tmp_dir.rmdir()
-        except OSError:
-            pass
+            for folder, group_files in sorted(groups.items()):
+                rel_folder = folder.relative_to(args.input_folder)
+                group_label = str(rel_folder) if str(rel_folder) != "." else "(root)"
+                group_name = "_".join(rel_folder.parts) if rel_folder.parts else "merged"
+
+                print(f"\nFolder: {group_label} — {len(group_files)} file(s)")
+
+                converted_temps: list[Path] = []
+
+                for idx, file_path in enumerate(group_files, 1):
+                    rel = file_path.relative_to(args.input_folder)
+                    print(f"  [{idx}/{len(group_files)}] {rel}")
+
+                    probe_data, has_video, has_audio = _probe_and_print(file_path)
+                    if probe_data is None:
+                        skipped += 1
+                        continue
+
+                    if not has_video and not has_audio:
+                        print("    Skipped: no playable streams.\n")
+                        skipped += 1
+                        continue
+
+                    if output_format in AUDIO_ONLY_FORMATS and not has_audio:
+                        print(f"    Skipped: target '{output_format}' is audio-only but file has no audio.\n")
+                        skipped += 1
+                        continue
+
+                    tmp_file = tmp_dir / f"{group_name}_{idx:04d}_{file_path.stem}.{output_format}"
+
+                    if args.dry_run:
+                        print(f"    [dry-run] Would convert to temp: {tmp_file.name}")
+                        converted_temps.append(tmp_file)
+                        continue
+
+                    print(f"    Converting...")
+                    if convert_file(file_path, tmp_file, has_video, has_audio):
+                        print("    Done.")
+                        converted_temps.append(tmp_file)
+                    else:
+                        print("    Failed.")
+                        failures += 1
+
+                if not converted_temps:
+                    print(f"  Nothing to merge.\n")
+                    continue
+
+                out_file = args.output_path / f"{group_name}.{output_format}"
+
+                if args.dry_run:
+                    print(f"\n  [dry-run] Would merge {len(converted_temps)} file(s) -> {out_file}\n")
+                    successes += len(converted_temps)
+                    continue
+
+                print(f"\n  Merging {len(converted_temps)} file(s) -> {out_file}")
+                if merge_files(converted_temps, out_file):
+                    print("  Merge complete.\n")
+                    successes += len(converted_temps)
+                else:
+                    print("  Merge failed.\n")
+                    failures += len(converted_temps)
+
+                for tmp in converted_temps:
+                    tmp.unlink(missing_ok=True)
+
+            try:
+                tmp_dir.rmdir()
+            except OSError:
+                pass
+
+    finally:
+        cleanup_extraction_tmp()
 
     print("=" * 50)
     print(f"Summary: {successes} converted, {failures} failed, {skipped} skipped"
