@@ -1,10 +1,10 @@
 # media-converter
 
-Scan a folder for media files, inspect their streams, and convert them using ffmpeg.
-Includes both a CLI and a PyQt6 GUI.
+> Built out of frustration. Couldn't find a single tool that handled the `.media` files cheap cameras dump onto SD cards. ffmpeg, VLC, Handbrake - nothing touched them. So this got vibe-coded into existence.
 
-Also supports a proprietary `.media` container format used by some WiFi camera/speaker
-devices — these files are auto-detected and extracted transparently.
+Scans a folder for media files and converts them using ffmpeg. Comes in two flavours: Python (PyQt6) and Go (Fyne). Both have a GUI and a CLI.
+
+**Take it. Use it. Change it. Ship it.** MIT licensed, no strings attached. See [LICENSE](LICENSE).
 
 ## Requirements
 
@@ -16,11 +16,11 @@ devices — these files are auto-detected and extracted transparently.
 
 | File | Purpose |
 |------|---------|
-| `media_converter.py` | CLI entry point and pipeline |
-| `media-converter-gui.py` | PyQt6 GUI front-end |
-| `media_extractor.py` | Helper module for proprietary `.media` files |
+| `media_converter.py` | CLI pipeline |
+| `media-converter-gui.py` | PyQt6 GUI |
+| `media_extractor.py` | `.media` file extractor |
 
-All three must live in the same directory.
+All three need to be in the same directory.
 
 ## GUI
 
@@ -29,24 +29,14 @@ pip install PyQt6
 python media-converter-gui.py
 ```
 
-**Format selector** — radio buttons for common formats, grouped by type:
+Pick a format (mp4, mkv, avi, mov, webm, mp3, wav, flac, aac, opus or custom), tick any options you need, hit Run.
 
-| Video | Audio |
-|-------|-------|
-| mp4, mkv, avi, mov, webm | mp3, wav, flac, aac, opus |
-
-A **Custom** option lets you type any format ffmpeg supports.
-
-**Options:**
-
-| Checkbox | Flag | Description |
+| Checkbox | Flag | What it does |
 |----------|------|-------------|
 | Recursive | `-r` | Recurse into subfolders |
-| Merge | `-m` | Merge output into one file; one file per folder with Recursive |
-| Dry Run | `-n` | Analyze only, no conversion |
+| Merge | `-m` | Merge output into one file per folder |
+| Dry Run | `-n` | Preview only, nothing gets converted |
 | All Files | `-a` | Probe every file regardless of extension |
-
-The log area streams output live as conversion runs.
 
 ## CLI
 
@@ -54,127 +44,42 @@ The log area streams output live as conversion runs.
 python media_converter.py <input_folder> <output_format> <output_path> [options]
 ```
 
-### Options
-
-| Flag | Long | Description |
-|------|------|-------------|
-| `-r` | `--recursive` | Recurse into subfolders |
-| `-m` | `--merge` | Merge all converted files into one; with `-r`, one file per folder |
-| `-n` | `--dry-run` | Analyze only, no conversion |
-| `-a` | `--all-files` | Probe every file regardless of extension |
-
-### Examples
-
 ```bash
-# Convert all .media files in a folder to mp4
 python media_converter.py ./input mp4 ./output
-
-# Recursively convert and merge each subfolder into one file
 python media_converter.py ./input mp4 ./output -r -m
-
-# Preview what would happen without converting
 python media_converter.py ./input mp4 ./output -r -n
-
-# Force-probe all files regardless of extension
 python media_converter.py ./input mp4 ./output -a
 ```
 
-## `.media` File Support
+## .media files
 
-Some WiFi camera/speaker devices write recordings to SD card in a proprietary
-`.media` container format that standard tools (ffmpeg, VLC) cannot read directly.
-This tool detects and extracts them automatically.
+Some cheap cameras write recordings in a proprietary `.media` format that nothing else reads. This tool detects them and extracts them automatically - you just point it at the folder and ask for mp4 (or whatever).
 
-### What it does
+Internally it walks the block structure, splits the interleaved video and audio payloads, strips per-block trailer bytes from the audio (skipping this causes a periodic click), muxes everything into an intermediate MKV, then runs it through the normal ffmpeg pipeline.
 
-When a `.media` file is encountered, the converter:
+**Format (reverse-engineered):**
+- 8-byte file header
+- Blocks: `[4-byte size][4-byte ts][9d 01 00 00][4-byte ts][91 78 23 e1][payload]`
+- Video payload: raw H.265/HEVC NAL units starting with `00 00 00 01`
+- Audio payload: 16-bit little-endian PCM at 8 kHz mono, with an 8-byte trailer per block
 
-1. Walks the file's block structure using its dual-marker pattern
-2. Separates the interleaved video and audio payloads
-3. Strips per-block trailer bytes from the audio (otherwise produces a periodic click)
-4. Muxes the streams into an intermediate MKV
-5. Feeds that MKV through the normal ffmpeg conversion pipeline
+**Limitations:**
+- Audio is hard-coded to 8 kHz mono. Different rate? Edit `AUDIO_SAMPLE_RATE` in `media_extractor.py`.
+- Reverse-engineered from one device family. Other vendors using `.media` may be completely different.
 
-The output is a normal `.mp4`, `.mkv`, `.mp3`, etc. — whatever you asked for.
+## Building
 
-### Format details (reverse-engineered)
+Use the scripts in `installers/` - they handle dependencies and build for your OS. Python uses PyInstaller, Go compiles to a native binary.
 
-For reference, the `.media` container looks like this:
-
-- **File header:** 8 bytes
-- **Blocks:** `[4-byte size][4-byte ts][9d 01 00 00][4-byte ts][91 78 23 e1][payload]`
-- **Video payload:** raw H.265/HEVC NAL units (begin with `00 00 00 01`)
-- **Audio payload:** 16-bit little-endian PCM @ 8 kHz mono, with an 8-byte
-  trailer per block that must be stripped before concatenating
-
-### Limitations
-
-- Audio sample rate is hard-coded to 8 kHz mono. If your device records at a
-  different rate, edit `AUDIO_SAMPLE_RATE` in `media_extractor.py`.
-- The format was reverse-engineered from one device family; other vendors using
-  the `.media` extension may use a completely different layout.
-
-## Building an Executable
-
-Use [PyInstaller](https://pyinstaller.org) to package the GUI into a standalone binary.
-You must build on the target OS — cross-compilation is not supported.
-
-### Install PyInstaller
-
-```bash
-pip install pyinstaller
-```
-
-### Linux
-
-```bash
-pyinstaller --onefile --windowed media_converter_gui.py
-```
-
-Output: `dist/media_converter_gui`
-
-Make it executable if needed:
-```bash
-chmod +x dist/media_converter_gui
-```
-
-### Windows
-
-Run in a Command Prompt or PowerShell:
-```bat
-pyinstaller --onefile --windowed media_converter_gui.py
-```
-
-Output: `dist\media_converter_gui.exe`
-
-To add a custom icon:
-```bat
-pyinstaller --onefile --windowed --icon=icon.ico media_converter_gui.py
-```
-
-### macOS
-
-```bash
-pyinstaller --onefile --windowed media_converter_gui.py
-```
-
-Output: `dist/media_converter_gui`
-
-To build a proper `.app` bundle:
-```bash
-pyinstaller --windowed --name "Media Converter" media_converter_gui.py
-```
-
-Output: `dist/Media Converter.app`
-
----
-
-> **Note:** ffmpeg and ffprobe must still be installed separately on the end user's machine and available on PATH. They are not bundled into the executable.
+ffmpeg is not bundled and must be installed separately on the end user's machine.
 
 ## Notes
 
-- Files with no valid audio or video streams are skipped.
+- Files with no audio or video streams are skipped.
 - Cover art embedded as a video stream is not counted as video.
-- Audio-only formats (mp3, wav, etc.) automatically drop the video stream.
-- `--merge` converts to temp files first, then concatenates with ffmpeg's concat demuxer. Temp files are cleaned up after merging.
-- `.media` files are extracted to intermediate MKVs in a temp directory that's cleaned up at the end of each run.
+- Audio-only formats drop the video stream automatically.
+- `--merge` converts to temp files first, then concatenates. Temp files are cleaned up after.
+
+## License
+
+MIT, see [LICENSE](LICENSE). Do whatever you want with it.

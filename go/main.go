@@ -252,16 +252,8 @@ func yesNo(b bool) string {
 }
 
 func main() {
-	for _, arg := range os.Args[1:] {
-		if arg == "--gui" {
-			runGUI()
-			return
-		}
+	if len(os.Args) > 1 && os.Args[1] == "--cli" {
+		os.Exit(runCLI(os.Args[2:]))
 	}
-	// No args or only flags that don't match → launch GUI
-	if len(os.Args) < 4 {
-		runGUI()
-		return
-	}
-	os.Exit(runCLI(os.Args[1:]))
+	runGUI()
 }
