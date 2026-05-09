@@ -32,6 +32,7 @@ pip install PyQt6 pyinstaller
 echo "Building .app bundle..."
 pyinstaller --windowed --name "Media Converter" \
     --add-data "media_converter.py:." \
+    --add-data "media_extractor.py:." \
     media-converter-gui.py
 
 echo ""

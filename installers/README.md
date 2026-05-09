@@ -2,9 +2,67 @@
 
 Build scripts that install all dependencies and compile media-converter into a standalone executable.
 
-> **Note:** Each script must be run from the `installers/` directory or will resolve paths automatically. ffmpeg is installed by each script as a system package.
+Two implementations are available — Python (PyInstaller) and Go. Both produce a single binary in `dist/`.
+
+> **Note:** Each script resolves paths automatically regardless of where it is called from. ffmpeg is installed by each script as a system package.
 
 ---
+
+## Go build scripts
+
+The Go versions produce a **true single binary** with no runtime dependencies (only ffmpeg must be on PATH at runtime). Fyne uses CGo, so you must build on the target OS — cross-compilation is not supported.
+
+### Linux — `build-go-linux.sh`
+
+**Requires:** sudo access. Supports Debian/Ubuntu, Fedora/RHEL, and Arch-based distros.
+
+```bash
+chmod +x installers/build-go-linux.sh
+./installers/build-go-linux.sh
+```
+
+What it does:
+1. Detects distro and installs Go, ffmpeg, and Fyne's required C libraries via the native package manager
+2. Verifies Go 1.21+
+3. Runs `go mod tidy && go build`
+4. Outputs `dist/media-converter`
+
+### macOS — `build-go-macos.sh`
+
+**Requires:** macOS 12+, internet access
+
+```bash
+chmod +x installers/build-go-macos.sh
+./installers/build-go-macos.sh
+```
+
+What it does:
+1. Ensures Xcode Command Line Tools are installed (required for CGo)
+2. Installs Go and ffmpeg via Homebrew
+3. Verifies Go 1.21+
+4. Runs `go mod tidy && go build`
+5. Outputs `dist/media-converter`
+
+### Windows — `build-go-windows.ps1`
+
+**Requires:** PowerShell 5+, run as Administrator
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\installers\build-go-windows.ps1
+```
+
+What it does:
+1. Installs [Chocolatey](https://chocolatey.org) if missing
+2. Installs Go and ffmpeg via Chocolatey
+3. Installs MinGW (GCC) — required by CGo for Fyne
+4. Verifies Go 1.21+
+5. Runs `go mod tidy && go build`
+6. Outputs `dist\media-converter.exe`
+
+---
+
+## Python build scripts (PyInstaller)
 
 ## Windows — `install-windows.ps1`
 
@@ -61,10 +119,13 @@ What it does:
 
 ## Output
 
-| Platform | Output |
-|----------|--------|
-| Windows  | `dist\media-converter.exe` |
-| macOS    | `dist/Media Converter.app` |
-| Linux    | `dist/media-converter` |
+| Script | Platform | Output |
+|--------|----------|--------|
+| Python | Windows  | `dist\media-converter.exe` |
+| Python | macOS    | `dist/Media Converter.app` |
+| Python | Linux    | `dist/media-converter` |
+| Go     | Windows  | `dist\media-converter.exe` |
+| Go     | macOS    | `dist/media-converter` |
+| Go     | Linux    | `dist/media-converter` |
 
-The virtual environment is created at `.venv/` in the project root and can be safely deleted after building.
+The Python virtual environment is created at `.venv/` in the project root and can be safely deleted after building. The Go module cache is managed by Go itself.
