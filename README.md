@@ -17,7 +17,7 @@ devices — these files are auto-detected and extracted transparently.
 | File | Purpose |
 |------|---------|
 | `media_converter.py` | CLI entry point and pipeline |
-| `media_converter_gui.py` | PyQt6 GUI front-end |
+| `media-converter-gui.py` | PyQt6 GUI front-end |
 | `media_extractor.py` | Helper module for proprietary `.media` files |
 
 All three must live in the same directory.
@@ -26,7 +26,7 @@ All three must live in the same directory.
 
 ```bash
 pip install PyQt6
-python media_converter_gui.py
+python media-converter-gui.py
 ```
 
 **Format selector** — radio buttons for common formats, grouped by type:

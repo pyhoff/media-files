@@ -48,6 +48,7 @@ pip install PyQt6 pyinstaller
 Write-Host "Building executable..." -ForegroundColor Yellow
 pyinstaller --onefile --windowed --name "media-converter" `
     --add-data "media_converter.py;." `
+    --add-data "media_extractor.py;." `
     media-converter-gui.py
 
 Write-Host ""
