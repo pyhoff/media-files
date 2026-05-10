@@ -67,11 +67,53 @@ Internally it walks the block structure, splits the interleaved video and audio 
 - Audio is hard-coded to 8 kHz mono. Different rate? Edit `AUDIO_SAMPLE_RATE` in `media_extractor.py`.
 - Reverse-engineered from one device family. Other vendors using `.media` may be completely different.
 
+## Go version
+
+The Go version lives in `go/` and compiles to a single native binary with no runtime dependencies (beyond ffmpeg on PATH). Launches the GUI by default, CLI is opt-in.
+
+```bash
+# GUI (default)
+./media-converter
+
+# CLI
+./media-converter --cli <input_folder> <output_format> <output_path> [options]
+./media-converter --cli ./input mp4 ./output -r -m
+```
+
 ## Building
 
-Use the scripts in `installers/` - they handle dependencies and build for your OS. Python uses PyInstaller, Go compiles to a native binary.
+Run the script for your OS from the project root. Each one installs dependencies and drops the binary in `dist/`.
 
-ffmpeg is not bundled and must be installed separately on the end user's machine.
+**Python (PyInstaller)**
+```bash
+# Linux
+./installers/install-linux.sh
+
+# macOS
+./installers/install-macos.sh
+
+# Windows (PowerShell, run as Admin)
+.\installers\install-windows.ps1
+```
+
+**Go**
+```bash
+# Linux
+./installers/build-go-linux.sh
+
+# macOS
+./installers/build-go-macos.sh
+
+# Windows (PowerShell, run as Admin)
+.\installers\build-go-windows.ps1
+```
+
+Or build the Go version manually if you already have Go 1.21+ installed:
+```bash
+cd go && go build -o ../dist/media-converter .
+```
+
+ffmpeg is not bundled and must be on PATH at runtime.
 
 ## Notes
 
