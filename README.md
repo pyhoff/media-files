@@ -80,6 +80,8 @@ The Go version lives in `go/` and compiles to a single native binary with no run
 ./media-converter --cli ./input mp4 ./output -r -m
 ```
 
+On Windows the binary is built as a GUI app so double-clicking it opens the GUI with no console window. Running `--cli` from a terminal works normally - it attaches to the existing console automatically.
+
 ## Building
 
 Run the script for your OS from the project root. Each one installs dependencies and drops the binary in `dist/`.

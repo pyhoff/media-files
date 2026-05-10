@@ -253,7 +253,22 @@ func yesNo(b bool) string {
 
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "--cli" {
+		attachConsole()
 		os.Exit(runCLI(os.Args[2:]))
 	}
+	runGUISafe()
+}
+
+func runGUISafe() {
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Fprintf(os.Stderr, "GUI failed to start: %v\n\n", r)
+			fmt.Fprintln(os.Stderr, "This usually means OpenGL/WGL is unavailable (VM, remote desktop, missing GPU driver).")
+			fmt.Fprintln(os.Stderr, "Use CLI mode instead:")
+			fmt.Fprintln(os.Stderr, "  media-converter --cli <input_folder> <format> <output_folder> [options]")
+			fmt.Fprintln(os.Stderr, "  media-converter --cli ./input mp4 ./output -r")
+			os.Exit(1)
+		}
+	}()
 	runGUI()
 }
