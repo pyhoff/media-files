@@ -71,7 +71,7 @@ go mod tidy
 
 Write-Host "Building executable..." -ForegroundColor Yellow
 New-Item -ItemType Directory -Force -Path "..\dist" | Out-Null
-go build -ldflags="-s -w" -o "..\dist\media-converter.exe" .
+go build -ldflags="-s -w -H windowsgui" -o "..\dist\media-converter.exe" .
 
 Write-Host ""
 Write-Host "Done. Executable: dist\media-converter.exe" -ForegroundColor Green
