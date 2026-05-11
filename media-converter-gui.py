@@ -14,6 +14,7 @@ import sys
 from pathlib import Path
 
 import media_converter
+from media_converter import T
 
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -71,7 +72,7 @@ class ConversionWorker(QThread):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Media Converter")
+        self.setWindowTitle(T.window_title)
         self.setMinimumWidth(680)
         self.worker: ConversionWorker | None = None
 
@@ -86,19 +87,19 @@ class MainWindow(QMainWindow):
         form.setSpacing(8)
 
         self.input_folder = QLineEdit()
-        input_browse = QPushButton("Browse")
-        input_browse.clicked.connect(lambda: self._pick_dir(self.input_folder, "Select Input Folder"))
-        form.addRow("Input Folder:", self._hbox(self.input_folder, input_browse))
+        input_browse = QPushButton(T.browse)
+        input_browse.clicked.connect(lambda: self._pick_dir(self.input_folder, T.input_hint))
+        form.addRow(T.input_folder, self._hbox(self.input_folder, input_browse))
 
         self.output_path = QLineEdit()
-        output_browse = QPushButton("Browse")
-        output_browse.clicked.connect(lambda: self._pick_dir(self.output_path, "Select Output Folder"))
-        form.addRow("Output Folder:", self._hbox(self.output_path, output_browse))
+        output_browse = QPushButton(T.browse)
+        output_browse.clicked.connect(lambda: self._pick_dir(self.output_path, T.output_hint))
+        form.addRow(T.output_folder, self._hbox(self.output_path, output_browse))
 
         root.addLayout(form)
 
         # Format selector
-        format_group = QGroupBox("Output Format")
+        format_group = QGroupBox(T.output_format)
         format_layout = QVBoxLayout(format_group)
         format_layout.setSpacing(6)
 
@@ -126,10 +127,10 @@ class MainWindow(QMainWindow):
 
         custom_row = QHBoxLayout()
         custom_row.setSpacing(8)
-        self.rb_custom = QRadioButton("Custom:")
+        self.rb_custom = QRadioButton(T.custom_label)
         self._format_btn_group.addButton(self.rb_custom)
         self.custom_format = QLineEdit()
-        self.custom_format.setPlaceholderText("e.g. vob, m4v …")
+        self.custom_format.setPlaceholderText(T.custom_hint)
         self.custom_format.setMaximumWidth(120)
         self.custom_format.setEnabled(False)
         self.rb_custom.toggled.connect(self.custom_format.setEnabled)
@@ -141,10 +142,7 @@ class MainWindow(QMainWindow):
         root.addWidget(format_group)
 
         # Note about .media support
-        media_note = QLabel(
-            "Note: proprietary .media files (WiFi camera/speaker format) "
-            "are auto-detected and extracted (HEVC video + 8kHz PCM audio)."
-        )
+        media_note = QLabel(T.note_media)
         media_note.setWordWrap(True)
         media_note.setStyleSheet("color: gray; font-size: 11px;")
         media_note.setAlignment(Qt.AlignmentFlag.AlignLeft)
@@ -152,17 +150,17 @@ class MainWindow(QMainWindow):
 
         # Flags
         flags = QHBoxLayout()
-        self.cb_recursive = QCheckBox("Recursive  -r")
-        self.cb_merge     = QCheckBox("Merge  -m")
-        self.cb_dry_run   = QCheckBox("Dry Run  -n")
-        self.cb_all_files = QCheckBox("All Files  -a")
+        self.cb_recursive = QCheckBox(T.chk_recursive)
+        self.cb_merge     = QCheckBox(T.chk_merge)
+        self.cb_dry_run   = QCheckBox(T.chk_dry_run)
+        self.cb_all_files = QCheckBox(T.chk_all_files)
         for cb in (self.cb_recursive, self.cb_merge, self.cb_dry_run, self.cb_all_files):
             flags.addWidget(cb)
         flags.addStretch()
         root.addLayout(flags)
 
         # Run button
-        self.run_btn = QPushButton("Run Conversion")
+        self.run_btn = QPushButton(T.run_btn)
         self.run_btn.setFixedHeight(36)
         self.run_btn.clicked.connect(self._run)
         root.addWidget(self.run_btn)
@@ -202,11 +200,11 @@ class MainWindow(QMainWindow):
         output_path   = self.output_path.text().strip()
 
         if not input_folder or not output_format or not output_path:
-            self.log.append("Error: input folder, output format, and output folder are all required.")
+            self.log.append(T.err_required)
             return
 
         if not re.fullmatch(r"[a-z0-9]+", output_format):
-            self.log.append(f"Error: invalid output format '{output_format}'. Use alphanumeric only.")
+            self.log.append(T.err_fmt_invalid.format(fmt=output_format))
             return
 
         argv = [input_folder, output_format, output_path]
@@ -220,9 +218,9 @@ class MainWindow(QMainWindow):
             argv.append("-a")
 
         self.log.clear()
-        self.log.append("Starting conversion...\n")
+        self.log.append(T.starting)
         self.run_btn.setEnabled(False)
-        self.run_btn.setText("Running…")
+        self.run_btn.setText(T.running_btn)
 
         self.worker = ConversionWorker(argv)
         self.worker.line_ready.connect(self.log.append)
@@ -230,10 +228,10 @@ class MainWindow(QMainWindow):
         self.worker.start()
 
     def _done(self, returncode: int):
-        status = "Completed" if returncode == 0 else f"Failed (exit {returncode})"
+        status = T.status_done if returncode == 0 else T.status_failed.format(code=returncode)
         self.log.append(f"\n{status}")
         self.run_btn.setEnabled(True)
-        self.run_btn.setText("Run Conversion")
+        self.run_btn.setText(T.run_btn)
 
 
 def main():

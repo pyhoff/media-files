@@ -71,6 +71,20 @@ install_system_deps() {
     esac
 }
 
+# --- Detect OS UI language (2-letter code) ---
+_detect_lang() {
+    local lang="" val=""
+    for _lv in LC_ALL LC_MESSAGES LANG LANGUAGE; do
+        val="${!_lv:-}"
+        [ -z "$val" ] && continue
+        val="${val%%:*}"
+        val="$(printf '%s' "$val" | sed 's/[_.@-].*//' | tr '[:upper:]' '[:lower:]')"
+        if [ "$val" = "c" ] || [ "$val" = "posix" ]; then lang="en"; break; fi
+        if [ -n "$val" ]; then lang="$val"; break; fi
+    done
+    printf '%s' "${lang:-en}"
+}
+
 install_system_deps
 
 # --- Check Go version (need 1.21+) ---
@@ -94,7 +108,19 @@ echo "Building executable..."
 mkdir -p ../dist
 go build -ldflags="-s -w" -o ../dist/media-converter .
 
-echo ""
-echo "Done. Executable: dist/media-converter"
-echo "Usage:  ./dist/media-converter                        (GUI)"
-echo "        ./dist/media-converter <in> <fmt> <out> [-r]  (CLI)"
+
+_LANG="$(_detect_lang)"
+if [ "$_LANG" = "es" ]; then
+    [ -f README.es.md ]            && cp README.es.md README.md
+    [ -f installers/README.es.md ] && cp installers/README.es.md installers/README.md
+    echo ""
+    echo "¡Listo! Ejecutable: dist/media-converter"
+    echo "Uso:  ./dist/media-converter                                     (GUI)"
+    echo "      ./dist/media-converter --cli <entrada> <fmt> <salida> [-r] (CLI)"
+    echo "Documentación actualizada al español (README.md)."
+else
+    echo ""
+    echo "Done. Executable: dist/media-converter"
+    echo "Usage:  ./dist/media-converter                        (GUI)"
+    echo "        ./dist/media-converter --cli <in> <fmt> <out> [-r]  (CLI)"
+fi

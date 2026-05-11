@@ -52,7 +52,7 @@ type StreamInfo struct {
 func checkDependencies() error {
 	for _, tool := range []string{"ffmpeg", "ffprobe"} {
 		if _, err := exec.LookPath(tool); err != nil {
-			return fmt.Errorf("%q not found on PATH — install ffmpeg: https://ffmpeg.org/download.html", tool)
+			return fmt.Errorf(T.ErrDep, tool)
 		}
 	}
 	return nil
@@ -127,7 +127,7 @@ func convertFile(inputPath, outputPath string, si StreamInfo, tmpDir string, log
 	actual := inputPath
 	if strings.EqualFold(filepath.Ext(inputPath), ".media") && isMediaFile(inputPath) {
 		intermediate := filepath.Join(tmpDir, filepath.Base(inputPath)+".mkv")
-		logFn("    Extracting .media -> intermediate MKV")
+		logFn(T.ExtractMedia)
 		if err := convertMediaToMKV(inputPath, intermediate); err != nil {
 			return fmt.Errorf("extraction failed: %w", err)
 		}

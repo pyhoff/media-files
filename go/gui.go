@@ -17,13 +17,13 @@ var audioFormats = []string{"mp3", "wav", "flac", "aac", "opus"}
 
 func runGUI() {
 	a := app.New()
-	w := a.NewWindow("Media Converter")
+	w := a.NewWindow(T.WindowTitle)
 	w.Resize(fyne.NewSize(720, 640))
 
 	// --- Path inputs ---
 	inputEntry := widget.NewEntry()
-	inputEntry.SetPlaceHolder("Select input folder...")
-	inputBrowse := widget.NewButton("Browse", func() {
+	inputEntry.SetPlaceHolder(T.InputHint)
+	inputBrowse := widget.NewButton(T.Browse, func() {
 		dialog.ShowFolderOpen(func(uri fyne.ListableURI, err error) {
 			if err == nil && uri != nil {
 				inputEntry.SetText(uri.Path())
@@ -32,8 +32,8 @@ func runGUI() {
 	})
 
 	outputEntry := widget.NewEntry()
-	outputEntry.SetPlaceHolder("Select output folder...")
-	outputBrowse := widget.NewButton("Browse", func() {
+	outputEntry.SetPlaceHolder(T.OutputHint)
+	outputBrowse := widget.NewButton(T.Browse, func() {
 		dialog.ShowFolderOpen(func(uri fyne.ListableURI, err error) {
 			if err == nil && uri != nil {
 				outputEntry.SetText(uri.Path())
@@ -45,9 +45,9 @@ func runGUI() {
 	// Create both groups with nil callbacks first, then wire cross-references
 	// after both exist — otherwise SetSelected("mp4") fires the callback
 	// before audioGroup is initialized, causing a nil pointer panic.
-	customCheck := widget.NewCheck("Custom:", nil)
+	customCheck := widget.NewCheck(T.CustomLabel, nil)
 	customEntry := widget.NewEntry()
-	customEntry.SetPlaceHolder("e.g. vob, m4v")
+	customEntry.SetPlaceHolder(T.CustomHint)
 	customEntry.Disable()
 
 	videoGroup := widget.NewRadioGroup(videoFormats, nil)
@@ -93,10 +93,10 @@ func runGUI() {
 	}
 
 	// --- Checkboxes ---
-	cbRecursive := widget.NewCheck("Recursive  -r", nil)
-	cbMerge     := widget.NewCheck("Merge  -m", nil)
-	cbDryRun    := widget.NewCheck("Dry Run  -n", nil)
-	cbAllFiles  := widget.NewCheck("All Files  -a", nil)
+	cbRecursive := widget.NewCheck(T.ChkRecursive, nil)
+	cbMerge     := widget.NewCheck(T.ChkMerge, nil)
+	cbDryRun    := widget.NewCheck(T.ChkDryRun, nil)
+	cbAllFiles  := widget.NewCheck(T.ChkAllFiles, nil)
 
 	// --- Log ---
 	logBinding := binding.NewString()
@@ -115,7 +115,7 @@ func runGUI() {
 	}
 
 	// --- Run button ---
-	runBtn := widget.NewButton("Run Conversion", nil)
+	runBtn := widget.NewButton(T.RunBtn, nil)
 	runBtn.Importance = widget.HighImportance
 
 	runBtn.OnTapped = func() {
@@ -124,22 +124,22 @@ func runGUI() {
 		format    := selectedFormat()
 
 		if inFolder == "" || outFolder == "" || format == "" {
-			dialog.ShowError(fmt.Errorf("input folder, output folder, and format are all required"), w)
+			dialog.ShowError(fmt.Errorf("%s", T.ErrRequired), w)
 			return
 		}
 		if !validFormat.MatchString(format) {
-			dialog.ShowError(fmt.Errorf("invalid format %q — use alphanumeric only", format), w)
+			dialog.ShowError(fmt.Errorf(T.ErrFmtInvalid, format), w)
 			return
 		}
 
 		logBinding.Set("")
 		runBtn.Disable()
-		runBtn.SetText("Running…")
+		runBtn.SetText(T.RunningBtn)
 
 		go func() {
 			defer func() {
 				runBtn.Enable()
-				runBtn.SetText("Run Conversion")
+				runBtn.SetText(T.RunBtn)
 			}()
 
 			if err := checkDependencies(); err != nil {
@@ -153,15 +153,15 @@ func runGUI() {
 				return
 			}
 			if len(files) == 0 {
-				appendLog(fmt.Sprintf("No media files found in %q", inFolder))
+				appendLog(fmt.Sprintf(T.NoMediaFound, inFolder))
 				return
 			}
 
 			rc := runConversion(files, inFolder, outFolder, format, cbMerge.Checked, cbDryRun.Checked, appendLog)
 			if rc != 0 {
-				appendLog(fmt.Sprintf("\nFailed (exit %d)", rc))
+				appendLog("\n" + fmt.Sprintf(T.StatusFailed, rc))
 			} else {
-				appendLog("\nCompleted")
+				appendLog("\n" + T.StatusDone)
 			}
 		}()
 	}
@@ -171,19 +171,19 @@ func runGUI() {
 	outputRow := container.NewBorder(nil, nil, nil, outputBrowse, outputEntry)
 
 	paths := container.NewVBox(
-		widget.NewLabel("Input Folder:"),  inputRow,
-		widget.NewLabel("Output Folder:"), outputRow,
+		widget.NewLabel(T.InputFolder),  inputRow,
+		widget.NewLabel(T.OutputFolder), outputRow,
 	)
 
-	formatBox := widget.NewCard("Output Format", "",
+	formatBox := widget.NewCard(T.OutputFormat, "",
 		container.NewVBox(
-			container.NewHBox(widget.NewLabel("Video:"), videoGroup),
-			container.NewHBox(widget.NewLabel("Audio:"), audioGroup),
+			container.NewHBox(widget.NewLabel(T.VideoLabel), videoGroup),
+			container.NewHBox(widget.NewLabel(T.AudioLabel), audioGroup),
 			container.NewHBox(customCheck, customEntry),
 		),
 	)
 
-	note := widget.NewLabel("Note: .media files (WiFi camera/speaker format) are auto-detected and extracted (HEVC + 8 kHz PCM).")
+	note := widget.NewLabel(T.NoteMedia)
 	note.Wrapping = fyne.TextWrapWord
 
 	checks := container.NewHBox(cbRecursive, cbMerge, cbDryRun, cbAllFiles)
