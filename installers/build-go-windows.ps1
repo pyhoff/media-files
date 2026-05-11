@@ -73,7 +73,20 @@ Write-Host "Building executable..." -ForegroundColor Yellow
 New-Item -ItemType Directory -Force -Path "..\dist" | Out-Null
 go build -ldflags="-s -w -H windowsgui" -o "..\dist\media-converter.exe" .
 
-Write-Host ""
-Write-Host "Done. Executable: dist\media-converter.exe" -ForegroundColor Green
-Write-Host "Usage:  .\dist\media-converter.exe                        (GUI)"
-Write-Host "        .\dist\media-converter.exe --cli <in> <fmt> <out>  (CLI)"
+
+# --- Language detection and README localization ---
+$LangCode = [System.Globalization.CultureInfo]::CurrentUICulture.TwoLetterISOLanguageName.ToLower()
+if ($LangCode -eq "es") {
+    if (Test-Path "README.es.md")            { Copy-Item "README.es.md"            "README.md"            -Force }
+    if (Test-Path "installers\README.es.md") { Copy-Item "installers\README.es.md" "installers\README.md" -Force }
+    Write-Host ""
+    Write-Host "¡Listo! Ejecutable: dist\media-converter.exe" -ForegroundColor Green
+    Write-Host "Uso:  .\dist\media-converter.exe                         (GUI)"
+    Write-Host "      .\dist\media-converter.exe --cli <entrada> <fmt> <salida>  (CLI)"
+    Write-Host "Documentación actualizada al español (README.md)."
+} else {
+    Write-Host ""
+    Write-Host "Done. Executable: dist\media-converter.exe" -ForegroundColor Green
+    Write-Host "Usage:  .\dist\media-converter.exe                        (GUI)"
+    Write-Host "        .\dist\media-converter.exe --cli <in> <fmt> <out>  (CLI)"
+}

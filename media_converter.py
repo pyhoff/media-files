@@ -22,15 +22,191 @@ Examples:
 
 import argparse
 import json
+import os
 import re
 import shutil
 import subprocess  # nosec B404 — required to invoke ffmpeg/ffprobe; shell=False used throughout
 import sys
 import tempfile
+import types
 from collections import defaultdict
 from pathlib import Path
 
 import media_extractor
+
+# ---------------------------------------------------------------------------
+# Localisation
+# ---------------------------------------------------------------------------
+
+def _detect_lang() -> str:
+    """Return the 2-letter BCP-47 language code for the OS UI language."""
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            buf = ctypes.create_unicode_buffer(85)
+            ctypes.windll.kernel32.GetUserDefaultLocaleName(buf, 85)
+            return buf.value.split("-")[0].lower()
+        except Exception:
+            pass
+    elif sys.platform == "darwin":
+        # macOS: query System Preferences language list (reliable for GUI locale)
+        try:
+            import re as _re
+            out = subprocess.check_output(
+                ["defaults", "read", "-g", "AppleLanguages"],
+                stderr=subprocess.DEVNULL, text=True, timeout=2,
+            )  # nosec B603
+            m = _re.search(r'"([a-z]{2})[-_"]', out.lower())
+            if m:
+                return m.group(1)
+        except Exception:
+            pass
+    # Linux + macOS fallback: POSIX / GNU locale env vars
+    for _v in ("LC_ALL", "LC_MESSAGES", "LANG"):
+        val = os.environ.get(_v, "")
+        if val:
+            code = val.lower().split("_")[0].split(".")[0].split("@")[0]
+            if code in ("c", "posix"):
+                return "en"
+            if code:
+                return code
+    # GNU LANGUAGE extension — colon-separated preference list
+    for part in os.environ.get("LANGUAGE", "").split(":"):
+        code = part.lower().split("_")[0].split(".")[0]
+        if code:
+            return "en" if code in ("c", "posix") else code
+    return "en"
+
+
+_T_EN = types.SimpleNamespace(
+    # GUI
+    window_title    = "Media Converter",
+    input_folder    = "Input Folder:",
+    input_hint      = "Select Input Folder",
+    output_folder   = "Output Folder:",
+    output_hint     = "Select Output Folder",
+    browse          = "Browse",
+    output_format   = "Output Format",
+    custom_label    = "Custom:",
+    custom_hint     = "e.g. vob, m4v …",
+    note_media      = ("Note: proprietary .media files (WiFi camera/speaker format) "
+                       "are auto-detected and extracted (HEVC video + 8 kHz PCM audio)."),
+    chk_recursive   = "Recursive  -r",
+    chk_merge       = "Merge  -m",
+    chk_dry_run     = "Dry Run  -n",
+    chk_all_files   = "All Files  -a",
+    run_btn         = "Run Conversion",
+    running_btn     = "Running…",
+    starting        = "Starting conversion...\n",
+    status_done     = "Completed",
+    status_failed   = "Failed (exit {code})",
+    err_required    = "Error: input folder, output format, and output folder are all required.",
+    err_fmt_invalid = "Error: invalid output format '{fmt}'. Use alphanumeric only.",
+    # CLI / log
+    err_dep         = "Error: '{tool}' was not found on PATH. Please install ffmpeg (https://ffmpeg.org/download.html) and try again.",
+    err_not_dir     = "Error: '{folder}' does not exist or is not a directory.",
+    err_invalid_fmt = "Error: invalid output format '{fmt}'. Use alphanumeric only (e.g. mp4, mkv, mp3).",
+    no_media_found  = "No media files found in '{folder}'{suffix}.",
+    no_media_rec    = " (recursive)",
+    found_files     = "Found {n} candidate file(s). Analyzing...\n",
+    skip_not_media  = "    Skipped: not a recognized media file (ffprobe failed).\n",
+    extract_media   = "    Extracting .media -> {name}",
+    extract_failed  = "    Failed to extract .media file.",
+    probe_line      = "    {prefix}Video: {video}  Audio: {audio}  Streams: {streams}  Duration: {dur}",
+    yes             = "yes",
+    no              = "no",
+    unknown         = "unknown",
+    streams_none    = "none",
+    ffmpeg_err      = "    ffmpeg error: {msg}",
+    skip_no_stream  = "    Skipped: no playable streams.\n",
+    skip_audio_only = "    Skipped: target '{fmt}' is audio-only but file has no audio.\n",
+    dry_run_convert = "    [dry-run] Would convert -> {out}\n",
+    converting      = "    Converting -> {out}",
+    conv_done       = "    Done.\n",
+    conv_failed     = "    Failed.\n",
+    folder_header   = "\nFolder: {label} — {n} file(s)",
+    dry_run_conv_tmp= "    [dry-run] Would convert to temp: {name}",
+    converting_short= "    Converting...",
+    done_short      = "    Done.",
+    failed_short    = "    Failed.",
+    nothing_merge   = "  Nothing to merge.\n",
+    dry_run_merge   = "\n  [dry-run] Would merge {n} file(s) -> {out}\n",
+    merging         = "\n  Merging {n} file(s) -> {out}",
+    merge_complete  = "  Merge complete.\n",
+    merge_failed    = "  Merge failed.\n",
+    summary         = "Summary: {successes} converted, {failures} failed, {skipped} skipped{suffix}",
+    dry_run_suffix  = " (dry-run)",
+)
+
+_T_ES = types.SimpleNamespace(
+    # GUI
+    window_title    = "Conversor de Medios",
+    input_folder    = "Carpeta de entrada:",
+    input_hint      = "Seleccionar carpeta de entrada",
+    output_folder   = "Carpeta de salida:",
+    output_hint     = "Seleccionar carpeta de salida",
+    browse          = "Examinar",
+    output_format   = "Formato de salida",
+    custom_label    = "Personalizado:",
+    custom_hint     = "ej. vob, m4v …",
+    note_media      = ("Nota: Los archivos .media (formato de cámara/bocina WiFi) "
+                       "se detectan automáticamente y se extraen (HEVC + PCM 8 kHz)."),
+    chk_recursive   = "Recursivo  -r",
+    chk_merge       = "Combinar  -m",
+    chk_dry_run     = "Modo prueba  -n",
+    chk_all_files   = "Todos los archivos  -a",
+    run_btn         = "Iniciar conversión",
+    running_btn     = "Ejecutando…",
+    starting        = "Iniciando conversión...\n",
+    status_done     = "Completado",
+    status_failed   = "Error (salida {code})",
+    err_required    = "Error: la carpeta de entrada, el formato y la carpeta de salida son obligatorios.",
+    err_fmt_invalid = "Error: formato inválido '{fmt}'. Use solo caracteres alfanuméricos.",
+    # CLI / log
+    err_dep         = "Error: '{tool}' no encontrado en PATH. Instale ffmpeg (https://ffmpeg.org/download.html) e intente de nuevo.",
+    err_not_dir     = "Error: '{folder}' no existe o no es un directorio.",
+    err_invalid_fmt = "Error: formato de salida inválido '{fmt}'. Use solo caracteres alfanuméricos (ej. mp4, mkv, mp3).",
+    no_media_found  = "No se encontraron archivos multimedia en '{folder}'{suffix}.",
+    no_media_rec    = " (recursivo)",
+    found_files     = "Se encontraron {n} archivo(s) candidato(s). Analizando...\n",
+    skip_not_media  = "    Omitido: archivo multimedia no reconocido (ffprobe falló).\n",
+    extract_media   = "    Extrayendo .media -> {name}",
+    extract_failed  = "    Error al extraer el archivo .media.",
+    probe_line      = "    {prefix}Vídeo: {video}  Audio: {audio}  Pistas: {streams}  Duración: {dur}",
+    yes             = "sí",
+    no              = "no",
+    unknown         = "desconocido",
+    streams_none    = "ninguna",
+    ffmpeg_err      = "    error ffmpeg: {msg}",
+    skip_no_stream  = "    Omitido: sin pistas reproducibles.\n",
+    skip_audio_only = "    Omitido: el formato '{fmt}' es solo audio pero el archivo no tiene audio.\n",
+    dry_run_convert = "    [prueba] Se convertiría -> {out}\n",
+    converting      = "    Convirtiendo -> {out}",
+    conv_done       = "    Listo.\n",
+    conv_failed     = "    Error.\n",
+    folder_header   = "\nCarpeta: {label} — {n} archivo(s)",
+    dry_run_conv_tmp= "    [prueba] Se convertiría a temporal: {name}",
+    converting_short= "    Convirtiendo...",
+    done_short      = "    Listo.",
+    failed_short    = "    Error.",
+    nothing_merge   = "  Nada para combinar.\n",
+    dry_run_merge   = "\n  [prueba] Se combinarían {n} archivo(s) -> {out}\n",
+    merging         = "\n  Combinando {n} archivo(s) -> {out}",
+    merge_complete  = "  Combinación completada.\n",
+    merge_failed    = "  Error al combinar.\n",
+    summary         = "Resumen: {successes} convertido(s), {failures} fallido(s), {skipped} omitido(s){suffix}",
+    dry_run_suffix  = " (prueba)",
+)
+
+# Active locale — imported by media-converter-gui.py
+T = _T_EN
+
+def _init_locale() -> None:
+    global T
+    if _detect_lang() == "es":
+        T = _T_ES
+
+_init_locale()
 
 MEDIA_EXTENSIONS = {
     # Video
@@ -53,10 +229,7 @@ _EXTRACTION_TMP_DIR: Path | None = None
 def check_dependencies() -> bool:
     for tool in ("ffmpeg", "ffprobe"):
         if shutil.which(tool) is None:
-            print(
-                f"Error: '{tool}' was not found on PATH. "
-                "Please install ffmpeg (https://ffmpeg.org/download.html) and try again."
-            )
+            print(T.err_dep.format(tool=tool))
             return False
     return True
 
@@ -88,7 +261,7 @@ def extract_media_to_intermediate(media_path: Path) -> Path | None:
     if intermediate.exists():
         return intermediate
 
-    print(f"    Extracting .media -> {intermediate.name}")
+    print(T.extract_media.format(name=intermediate.name))
     if media_extractor.convert_media_to_mkv(media_path, intermediate):
         return intermediate
     return None
@@ -159,7 +332,7 @@ def convert_file(input_path: Path, output_path: Path, has_video: bool, has_audio
     if input_path.suffix.lower() == ".media" and media_extractor.is_media_file(input_path):
         intermediate = extract_media_to_intermediate(input_path)
         if intermediate is None:
-            print("    Failed to extract .media file.")
+            print(T.extract_failed)
             return False
         actual_input = intermediate
 
@@ -171,7 +344,8 @@ def convert_file(input_path: Path, output_path: Path, has_video: bool, has_audio
         subprocess.run(cmd, check=True, capture_output=True, text=True)  # nosec B603
         return True
     except subprocess.CalledProcessError as e:
-        print(f"    ffmpeg error: {e.stderr.strip().splitlines()[-1] if e.stderr else 'unknown'}")
+        msg = e.stderr.strip().splitlines()[-1] if e.stderr else T.unknown
+        print(T.ffmpeg_err.format(msg=msg))
         return False
 
 
@@ -190,7 +364,8 @@ def merge_files(input_files: list[Path], output_file: Path) -> bool:
         subprocess.run(cmd, check=True, capture_output=True, text=True)  # nosec B603
         return True
     except subprocess.CalledProcessError as e:
-        print(f"    ffmpeg error: {e.stderr.strip().splitlines()[-1] if e.stderr else 'unknown'}")
+        msg = e.stderr.strip().splitlines()[-1] if e.stderr else T.unknown
+        print(T.ffmpeg_err.format(msg=msg))
         return False
     finally:
         list_path.unlink(missing_ok=True)
@@ -219,20 +394,23 @@ def parse_args(argv=None) -> argparse.Namespace:
 def _probe_and_print(file_path: Path) -> tuple[dict | None, bool, bool]:
     probe_data = probe_file(file_path)
     if probe_data is None:
-        print("    Skipped: not a recognized media file (ffprobe failed).\n")
+        print(T.skip_not_media)
         return None, False, False
 
     has_video, has_audio, codecs = analyze_streams(probe_data)
     duration = probe_data.get("format", {}).get("duration")
-    duration_str = f"{float(duration):.1f}s" if duration else "unknown"
+    duration_str = f"{float(duration):.1f}s" if duration else T.unknown
 
     is_proprietary = file_path.suffix.lower() == ".media"
     prefix = "[.media] " if is_proprietary else ""
 
-    print(f"    {prefix}Video: {'yes' if has_video else 'no'}  "
-          f"Audio: {'yes' if has_audio else 'no'}  "
-          f"Streams: {', '.join(codecs) or 'none'}  "
-          f"Duration: {duration_str}")
+    print(T.probe_line.format(
+        prefix=prefix,
+        video=T.yes if has_video else T.no,
+        audio=T.yes if has_audio else T.no,
+        streams=", ".join(codecs) or T.streams_none,
+        dur=duration_str,
+    ))
 
     return probe_data, has_video, has_audio
 
@@ -244,23 +422,23 @@ def main(argv=None) -> int:
         return 1
 
     if not args.input_folder.is_dir():
-        print(f"Error: '{args.input_folder}' does not exist or is not a directory.")
+        print(T.err_not_dir.format(folder=args.input_folder))
         return 1
 
     output_format = args.output_format.lstrip(".").lower()
     if not re.fullmatch(r"[a-z0-9]+", output_format):
-        print(f"Error: invalid output format '{output_format}'. Use alphanumeric only (e.g. mp4, mkv, mp3).")
+        print(T.err_invalid_fmt.format(fmt=output_format))
         return 1
 
     args.output_path.mkdir(parents=True, exist_ok=True)
 
     files = find_media_files(args.input_folder, args.recursive, args.all_files)
     if not files:
-        print(f"No media files found in '{args.input_folder}'"
-              f"{' (recursive)' if args.recursive else ''}.")
+        suffix = T.no_media_rec if args.recursive else ""
+        print(T.no_media_found.format(folder=args.input_folder, suffix=suffix))
         return 0
 
-    print(f"Found {len(files)} candidate file(s). Analyzing...\n")
+    print(T.found_files.format(n=len(files)))
 
     successes = 0
     failures = 0
@@ -278,12 +456,12 @@ def main(argv=None) -> int:
                     continue
 
                 if not has_video and not has_audio:
-                    print("    Skipped: no playable audio or video streams.\n")
+                    print(T.skip_no_stream)
                     skipped += 1
                     continue
 
                 if output_format in AUDIO_ONLY_FORMATS and not has_audio:
-                    print(f"    Skipped: target '{output_format}' is audio-only but file has no audio.\n")
+                    print(T.skip_audio_only.format(fmt=output_format))
                     skipped += 1
                     continue
 
@@ -291,15 +469,15 @@ def main(argv=None) -> int:
                 out_file.parent.mkdir(parents=True, exist_ok=True)
 
                 if args.dry_run:
-                    print(f"    [dry-run] Would convert -> {out_file}\n")
+                    print(T.dry_run_convert.format(out=out_file))
                     continue
 
-                print(f"    Converting -> {out_file}")
+                print(T.converting.format(out=out_file))
                 if convert_file(file_path, out_file, has_video, has_audio):
-                    print("    Done.\n")
+                    print(T.conv_done)
                     successes += 1
                 else:
-                    print("    Failed.\n")
+                    print(T.conv_failed)
                     failures += 1
 
         else:
@@ -318,7 +496,7 @@ def main(argv=None) -> int:
                 group_label = str(rel_folder) if str(rel_folder) != "." else "(root)"
                 group_name = "_".join(rel_folder.parts) if rel_folder.parts else "merged"
 
-                print(f"\nFolder: {group_label} — {len(group_files)} file(s)")
+                print(T.folder_header.format(label=group_label, n=len(group_files)))
 
                 converted_temps: list[Path] = []
 
@@ -332,47 +510,47 @@ def main(argv=None) -> int:
                         continue
 
                     if not has_video and not has_audio:
-                        print("    Skipped: no playable streams.\n")
+                        print(T.skip_no_stream)
                         skipped += 1
                         continue
 
                     if output_format in AUDIO_ONLY_FORMATS and not has_audio:
-                        print(f"    Skipped: target '{output_format}' is audio-only but file has no audio.\n")
+                        print(T.skip_audio_only.format(fmt=output_format))
                         skipped += 1
                         continue
 
                     tmp_file = tmp_dir / f"{group_name}_{idx:04d}_{file_path.stem}.{output_format}"
 
                     if args.dry_run:
-                        print(f"    [dry-run] Would convert to temp: {tmp_file.name}")
+                        print(T.dry_run_conv_tmp.format(name=tmp_file.name))
                         converted_temps.append(tmp_file)
                         continue
 
-                    print(f"    Converting...")
+                    print(T.converting_short)
                     if convert_file(file_path, tmp_file, has_video, has_audio):
-                        print("    Done.")
+                        print(T.done_short)
                         converted_temps.append(tmp_file)
                     else:
-                        print("    Failed.")
+                        print(T.failed_short)
                         failures += 1
 
                 if not converted_temps:
-                    print(f"  Nothing to merge.\n")
+                    print(T.nothing_merge)
                     continue
 
                 out_file = args.output_path / f"{group_name}.{output_format}"
 
                 if args.dry_run:
-                    print(f"\n  [dry-run] Would merge {len(converted_temps)} file(s) -> {out_file}\n")
+                    print(T.dry_run_merge.format(n=len(converted_temps), out=out_file))
                     successes += len(converted_temps)
                     continue
 
-                print(f"\n  Merging {len(converted_temps)} file(s) -> {out_file}")
+                print(T.merging.format(n=len(converted_temps), out=out_file))
                 if merge_files(converted_temps, out_file):
-                    print("  Merge complete.\n")
+                    print(T.merge_complete)
                     successes += len(converted_temps)
                 else:
-                    print("  Merge failed.\n")
+                    print(T.merge_failed)
                     failures += len(converted_temps)
 
                 for tmp in converted_temps:
@@ -387,8 +565,8 @@ def main(argv=None) -> int:
         cleanup_extraction_tmp()
 
     print("=" * 50)
-    print(f"Summary: {successes} converted, {failures} failed, {skipped} skipped"
-          f"{' (dry-run)' if args.dry_run else ''}")
+    suffix = T.dry_run_suffix if args.dry_run else ""
+    print(T.summary.format(successes=successes, failures=failures, skipped=skipped, suffix=suffix))
     return 0 if failures == 0 else 1
 
 

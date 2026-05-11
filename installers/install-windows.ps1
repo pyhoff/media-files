@@ -61,5 +61,16 @@ pyinstaller --onefile --windowed --name "media-converter" `
     --add-data "media_extractor.py;." `
     media-converter-gui.py
 
-Write-Host ""
-Write-Host "Done. Executable: dist\media-converter.exe" -ForegroundColor Green
+
+# --- Language detection and README localization ---
+$LangCode = [System.Globalization.CultureInfo]::CurrentUICulture.TwoLetterISOLanguageName.ToLower()
+if ($LangCode -eq "es") {
+    if (Test-Path "README.es.md")            { Copy-Item "README.es.md"            "README.md"            -Force }
+    if (Test-Path "installers\README.es.md") { Copy-Item "installers\README.es.md" "installers\README.md" -Force }
+    Write-Host ""
+    Write-Host "¡Listo! Ejecutable: dist\media-converter.exe" -ForegroundColor Green
+    Write-Host "Documentación actualizada al español (README.md)."
+} else {
+    Write-Host ""
+    Write-Host "Done. Executable: dist\media-converter.exe" -ForegroundColor Green
+}

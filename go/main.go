@@ -22,7 +22,7 @@ func runCLI(args []string) int {
 	fs.BoolVar(allFiles, "all-files", false, "")
 
 	if err := fs.Parse(args); err != nil || fs.NArg() < 3 {
-		fmt.Fprintln(os.Stderr, "Usage: media-converter <input_folder> <output_format> <output_path> [-r] [-n] [-m] [-a]")
+		fmt.Fprintln(os.Stderr, T.Usage)
 		return 1
 	}
 
@@ -53,7 +53,7 @@ func runCLI(args []string) int {
 		return 1
 	}
 	if len(files) == 0 {
-		fmt.Printf("No media files found in %q\n", inputFolder)
+		fmt.Printf(T.NoMediaFound+"\n", inputFolder)
 		return 0
 	}
 
@@ -63,7 +63,7 @@ func runCLI(args []string) int {
 }
 
 func runConversion(files []string, inputFolder, outputPath, outputFormat string, merge, dryRun bool, log func(string)) int {
-	log(fmt.Sprintf("Found %d candidate file(s). Analyzing...\n", len(files)))
+	log(fmt.Sprintf(T.FoundFiles, len(files)))
 
 	tmpDir, err := os.MkdirTemp("", "media_extract_")
 	if err != nil {
@@ -82,11 +82,11 @@ func runConversion(files []string, inputFolder, outputPath, outputFormat string,
 			si, ok := probeAndLog(file, log)
 			if !ok { skipped++; continue }
 			if !si.hasVideo && !si.hasAudio {
-				log("    Skipped: no playable streams.\n")
+				log(T.SkipNoStream)
 				skipped++; continue
 			}
 			if audioOnlyFormats[outputFormat] && !si.hasAudio {
-				log(fmt.Sprintf("    Skipped: %q is audio-only but file has no audio.\n", outputFormat))
+				log(fmt.Sprintf(T.SkipAudioOnly, outputFormat))
 				skipped++; continue
 			}
 
@@ -97,16 +97,16 @@ func runConversion(files []string, inputFolder, outputPath, outputFormat string,
 			}
 
 			if dryRun {
-				log(fmt.Sprintf("    [dry-run] Would convert -> %s\n", outFile))
+				log(fmt.Sprintf(T.DryRunConvert, outFile))
 				continue
 			}
 
-			log(fmt.Sprintf("    Converting -> %s", outFile))
+			log(fmt.Sprintf(T.Converting, outFile))
 			if err := convertFile(file, outFile, si, tmpDir, log); err != nil {
-				log("    Failed: " + err.Error() + "\n")
+				log(T.ConvFailed + err.Error() + "\n")
 				failures++
 			} else {
-				log("    Done.\n")
+				log(T.ConvDone)
 				successes++
 			}
 		}
@@ -136,7 +136,7 @@ func runConversion(files []string, inputFolder, outputPath, outputFormat string,
 			if groupName == "." {
 				groupName = "merged"
 			}
-			log(fmt.Sprintf("\nFolder: %s — %d file(s)", label, len(groupFiles)))
+			log(fmt.Sprintf(T.FolderHeader, label, len(groupFiles)))
 
 			var temps []string
 			for j, file := range groupFiles {
@@ -146,11 +146,11 @@ func runConversion(files []string, inputFolder, outputPath, outputFormat string,
 				si, ok := probeAndLog(file, log)
 				if !ok { skipped++; continue }
 				if !si.hasVideo && !si.hasAudio {
-					log("    Skipped: no playable streams.\n")
+					log(T.SkipNoStream)
 					skipped++; continue
 				}
 				if audioOnlyFormats[outputFormat] && !si.hasAudio {
-					log(fmt.Sprintf("    Skipped: %q is audio-only but file has no audio.\n", outputFormat))
+					log(fmt.Sprintf(T.SkipAudioOnly, outputFormat))
 					skipped++; continue
 				}
 
@@ -158,39 +158,39 @@ func runConversion(files []string, inputFolder, outputPath, outputFormat string,
 				tmpFile := filepath.Join(mergeTmp, fmt.Sprintf("%s_%04d_%s.%s", groupName, j+1, stem, outputFormat))
 
 				if dryRun {
-					log("    [dry-run] Would convert to temp: " + filepath.Base(tmpFile))
+					log(T.DryRunConvTemp + filepath.Base(tmpFile))
 					temps = append(temps, tmpFile)
 					continue
 				}
 
-				log("    Converting...")
+				log(T.ConvertingShort)
 				if err := convertFile(file, tmpFile, si, tmpDir, log); err != nil {
-					log("    Failed: " + err.Error())
+					log(T.FailedShort + err.Error())
 					failures++
 				} else {
-					log("    Done.")
+					log(T.DoneShort)
 					temps = append(temps, tmpFile)
 				}
 			}
 
 			if len(temps) == 0 {
-				log("  Nothing to merge.")
+				log(T.NothingMerge)
 				continue
 			}
 
 			outFile := filepath.Join(outputPath, groupName+"."+outputFormat)
 			if dryRun {
-				log(fmt.Sprintf("\n  [dry-run] Would merge %d file(s) -> %s\n", len(temps), outFile))
+				log(fmt.Sprintf(T.DryRunMerge, len(temps), outFile))
 				successes += len(temps)
 				continue
 			}
 
-			log(fmt.Sprintf("\n  Merging %d file(s) -> %s", len(temps), outFile))
+			log(fmt.Sprintf(T.MergingFiles, len(temps), outFile))
 			if err := mergeFiles(temps, outFile); err != nil {
-				log("  Merge failed: " + err.Error())
+				log(T.MergeFailed + err.Error())
 				failures += len(temps)
 			} else {
-				log("  Merge complete.\n")
+				log(T.MergeComplete)
 				successes += len(temps)
 			}
 			for _, t := range temps {
@@ -201,10 +201,10 @@ func runConversion(files []string, inputFolder, outputPath, outputFormat string,
 
 	sfx := ""
 	if dryRun {
-		sfx = " (dry-run)"
+		sfx = T.DryRunSuffix
 	}
 	log(strings.Repeat("=", 50))
-	log(fmt.Sprintf("Summary: %d converted, %d failed, %d skipped%s", successes, failures, skipped, sfx))
+	log(fmt.Sprintf(T.SummaryLine, successes, failures, skipped, sfx))
 	if failures > 0 {
 		return 1
 	}
@@ -214,12 +214,12 @@ func runConversion(files []string, inputFolder, outputPath, outputFormat string,
 func probeAndLog(path string, log func(string)) (StreamInfo, bool) {
 	data, err := probeFile(path)
 	if err != nil {
-		log("    Skipped: not a recognized media file.\n")
+		log(T.SkipNotMedia)
 		return StreamInfo{}, false
 	}
 	si := analyzeStreams(data)
 
-	durStr := "unknown"
+	durStr := T.Unknown
 	if si.duration != "" {
 		if f, err := strconv.ParseFloat(si.duration, 64); err == nil {
 			durStr = fmt.Sprintf("%.1fs", f)
@@ -234,9 +234,7 @@ func probeAndLog(path string, log func(string)) (StreamInfo, bool) {
 	if codecs == "" {
 		codecs = "none"
 	}
-	log(fmt.Sprintf("    %sVideo: %s  Audio: %s  Streams: %s  Duration: %s",
-		prefix, yesNo(si.hasVideo), yesNo(si.hasAudio), codecs, durStr,
-	))
+	log(fmt.Sprintf(T.ProbeFormat, prefix, yesNo(si.hasVideo), yesNo(si.hasAudio), codecs, durStr))
 	return si, true
 }
 
@@ -246,12 +244,13 @@ func replaceExt(path, newExt string) string {
 
 func yesNo(b bool) string {
 	if b {
-		return "yes"
+		return T.Yes
 	}
-	return "no"
+	return T.No
 }
 
 func main() {
+	initLocale()
 	if len(os.Args) > 1 && os.Args[1] == "--cli" {
 		attachConsole()
 		os.Exit(runCLI(os.Args[2:]))
